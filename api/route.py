@@ -22,14 +22,20 @@ if not firebase_config:
     raise ValueError("FIREBASE_SERVICE_ACCOUNT_JSON not found in environment variables")
 
 # Parse the JSON string from environment variable
+# Handle potential double-escaping from environment variables
 try:
     service_account = json.loads(firebase_config)
-except json.JSONDecodeError as e:
-    raise ValueError(
-        f"FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON: {e}. "
-        "Make sure you're using double quotes (\") not single quotes (') in your JSON. "
-        f"First 50 chars of value: {firebase_config[:50]}..."
-    )
+except json.JSONDecodeError:
+    # Try to unescape if the JSON was double-escaped
+    try:
+        # Remove escape characters that may have been added
+        unescaped = firebase_config.replace('\\"', '"').replace('\\\\', '\\')
+        service_account = json.loads(unescaped)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON: {e}. "
+            f"First 100 chars: {firebase_config[:100]}..."
+        )
 cred = credentials.Certificate(service_account)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
