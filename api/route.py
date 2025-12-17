@@ -29,24 +29,30 @@ try:
     # First, try to decode as Base64 (most robust method)
     # Check if it looks like base64 (no braces at start)
     if not firebase_config.strip().startswith('{'):
+        logger.info(f"Attempting Base64 decode of config (length: {len(firebase_config)})")
         decoded_config = base64.b64decode(firebase_config).decode('utf-8')
+        logger.info(f"Base64 decode successful, decoded length: {len(decoded_config)}")
+        if not decoded_config.strip():
+            raise ValueError("Base64 decode resulted in empty string")
         service_account = json.loads(decoded_config)
     else:
         # If it starts with {, assume it's raw JSON
+        logger.info("Config starts with {, assuming raw JSON")
         service_account = json.loads(firebase_config)
-except (json.JSONDecodeError, binascii.Error, UnicodeDecodeError):
+except (json.JSONDecodeError, binascii.Error, UnicodeDecodeError, ValueError) as e:
     # Fallback: Try to unescape if the JSON was double-escaped (common in some env injections)
     try:
-        logger.warning("Failed to parse directly, attempting to unescape JSON string...")
+        logger.warning(f"Primary parsing failed ({e}), attempting to unescape JSON string...")
         unescaped = firebase_config.replace('\\"', '"').replace('\\\\', '\\')
         service_account = json.loads(unescaped)
-    except Exception as e:
+    except Exception as fallback_e:
         # Log a safe version of the config for debugging (first 20 chars)
-        safe_preview = firebase_config[:20] + "..." if firebase_config else "Empty"
+        safe_preview = firebase_config[:50] + "..." if firebase_config else "Empty"
         raise ValueError(
-            f"Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON. Error: {str(e)}. "
-            f"Input preview: {safe_preview}. "
-            "Recommendation: Base64 encode your service account JSON file and use that string as the environment variable."
+            f"Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON after all attempts. "
+            f"Primary error: {str(e)}. Fallback error: {str(fallback_e)}. "
+            f"Input length: {len(firebase_config)}. Input preview: {safe_preview}. "
+            "Ensure the environment variable contains the complete Base64-encoded service account JSON."
         )
 
 cred = credentials.Certificate(service_account)
