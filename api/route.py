@@ -16,26 +16,39 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+import base64
+import binascii
+
 # Initialize Firebase
 firebase_config = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
 if not firebase_config:
     raise ValueError("FIREBASE_SERVICE_ACCOUNT_JSON not found in environment variables")
 
 # Parse the JSON string from environment variable
-# Handle potential double-escaping from environment variables
 try:
-    service_account = json.loads(firebase_config)
-except json.JSONDecodeError:
-    # Try to unescape if the JSON was double-escaped
+    # First, try to decode as Base64 (most robust method)
+    # Check if it looks like base64 (no braces at start)
+    if not firebase_config.strip().startswith('{'):
+        decoded_config = base64.b64decode(firebase_config).decode('utf-8')
+        service_account = json.loads(decoded_config)
+    else:
+        # If it starts with {, assume it's raw JSON
+        service_account = json.loads(firebase_config)
+except (json.JSONDecodeError, binascii.Error, UnicodeDecodeError):
+    # Fallback: Try to unescape if the JSON was double-escaped (common in some env injections)
     try:
-        # Remove escape characters that may have been added
+        logger.warning("Failed to parse directly, attempting to unescape JSON string...")
         unescaped = firebase_config.replace('\\"', '"').replace('\\\\', '\\')
         service_account = json.loads(unescaped)
-    except json.JSONDecodeError as e:
+    except Exception as e:
+        # Log a safe version of the config for debugging (first 20 chars)
+        safe_preview = firebase_config[:20] + "..." if firebase_config else "Empty"
         raise ValueError(
-            f"FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON: {e}. "
-            f"First 100 chars: {firebase_config[:100]}..."
+            f"Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON. Error: {str(e)}. "
+            f"Input preview: {safe_preview}. "
+            "Recommendation: Base64 encode your service account JSON file and use that string as the environment variable."
         )
+
 cred = credentials.Certificate(service_account)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
