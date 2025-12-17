@@ -18,14 +18,14 @@ This is a FastAPI-based API for performing semantic vector search on products st
 
 ## Running Locally
 
-Run the server:
+Run the server with uvicorn:
 ```bash
-python api/main.py
+uvicorn index:app --reload
 ```
 
-Or with uvicorn:
+Or using vercel dev:
 ```bash
-uvicorn api.main:app --reload
+vercel dev
 ```
 
 ## Deployment to Vercel
