@@ -1,0 +1,8 @@
+__pycache__
+*.pyc
+.env
+README.md
+.git
+.gitignore
+*firebase*adminsdk*.json
+*service*account*.json
