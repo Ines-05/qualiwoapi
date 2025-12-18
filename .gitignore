@@ -3,6 +3,10 @@
 .env.local
 .env.production
 
+# Firebase service account
+firebase-service-account.json
+*firebase*adminsdk*.json
+
 # Python
 __pycache__/
 *.py[cod]

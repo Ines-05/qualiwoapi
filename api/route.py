@@ -20,40 +20,45 @@ import base64
 import binascii
 
 # Initialize Firebase
-firebase_config = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
-if not firebase_config:
-    raise ValueError("FIREBASE_SERVICE_ACCOUNT_JSON not found in environment variables")
-
-# Parse the JSON string from environment variable
 try:
-    # First, try to decode as Base64 (most robust method)
-    # Check if it looks like base64 (no braces at start)
-    if not firebase_config.strip().startswith('{'):
-        logger.info(f"Attempting Base64 decode of config (length: {len(firebase_config)})")
-        decoded_config = base64.b64decode(firebase_config).decode('utf-8')
-        logger.info(f"Base64 decode successful, decoded length: {len(decoded_config)}")
-        if not decoded_config.strip():
-            raise ValueError("Base64 decode resulted in empty string")
-        service_account = json.loads(decoded_config)
-    else:
-        # If it starts with {, assume it's raw JSON
-        logger.info("Config starts with {, assuming raw JSON")
-        service_account = json.loads(firebase_config)
-except (json.JSONDecodeError, binascii.Error, UnicodeDecodeError, ValueError) as e:
-    # Fallback: Try to unescape if the JSON was double-escaped (common in some env injections)
+    with open('firebase-service-account.json', 'r') as f:
+        service_account = json.load(f)
+except FileNotFoundError:
+    # Fallback to environment variable if file doesn't exist
+    firebase_config = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+    if not firebase_config:
+        raise ValueError("Neither firebase-service-account.json file nor FIREBASE_SERVICE_ACCOUNT_JSON environment variable found")
+
+    # Parse the JSON string from environment variable
     try:
-        logger.warning(f"Primary parsing failed ({e}), attempting to unescape JSON string...")
-        unescaped = firebase_config.replace('\\"', '"').replace('\\\\', '\\')
-        service_account = json.loads(unescaped)
-    except Exception as fallback_e:
-        # Log a safe version of the config for debugging (first 20 chars)
-        safe_preview = firebase_config[:50] + "..." if firebase_config else "Empty"
-        raise ValueError(
-            f"Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON after all attempts. "
-            f"Primary error: {str(e)}. Fallback error: {str(fallback_e)}. "
-            f"Input length: {len(firebase_config)}. Input preview: {safe_preview}. "
-            "Ensure the environment variable contains the complete Base64-encoded service account JSON."
-        )
+        # First, try to decode as Base64 (most robust method)
+        # Check if it looks like base64 (no braces at start)
+        if not firebase_config.strip().startswith('{'):
+            logger.info(f"Attempting Base64 decode of config (length: {len(firebase_config)})")
+            decoded_config = base64.b64decode(firebase_config).decode('utf-8')
+            logger.info(f"Base64 decode successful, decoded length: {len(decoded_config)}")
+            if not decoded_config.strip():
+                raise ValueError("Base64 decode resulted in empty string")
+            service_account = json.loads(decoded_config)
+        else:
+            # If it starts with {, assume it's raw JSON
+            logger.info("Config starts with {, assuming raw JSON")
+            service_account = json.loads(firebase_config)
+    except (json.JSONDecodeError, binascii.Error, UnicodeDecodeError, ValueError) as e:
+        # Fallback: Try to unescape if the JSON was double-escaped (common in some env injections)
+        try:
+            logger.warning(f"Primary parsing failed ({e}), attempting to unescape JSON string...")
+            unescaped = firebase_config.replace('\\"', '"').replace('\\\\', '\\')
+            service_account = json.loads(unescaped)
+        except Exception as fallback_e:
+            # Log a safe version of the config for debugging (first 20 chars)
+            safe_preview = firebase_config[:50] + "..." if firebase_config else "Empty"
+            raise ValueError(
+                f"Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON after all attempts. "
+                f"Primary error: {str(e)}. Fallback error: {str(fallback_e)}. "
+                f"Input length: {len(firebase_config)}. Input preview: {safe_preview}. "
+                "Ensure the environment variable contains the complete Base64-encoded service account JSON."
+            )
 
 cred = credentials.Certificate(service_account)
 firebase_admin.initialize_app(cred)
@@ -129,12 +134,16 @@ router = APIRouter()
 @router.post("/search")
 async def search(request: SearchRequest):
     """Search for products based on semantic similarity."""
-    logger.info(f"Received search request: {request.query}")
+    logger.info(f"QUERY SENT: {request.query}")
     query = request.query
     if not query:
         logger.warning("Empty query received")
         raise HTTPException(status_code=400, detail="Query parameter is required")
 
-    results = await search_products(query)
-    logger.info(f"Returning {len(results)} results for query: {query}")
-    return {"query": query, "results": results}
+    try:
+        results = await search_products(query)
+        logger.info(f"QUERY EXECUTED: Found {len(results)} results for '{query}'")
+        return {"query": query, "results": results}
+    except Exception as e:
+        logger.error(f"ERROR processing query '{query}': {str(e)}")
+        raise
